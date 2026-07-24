@@ -571,7 +571,7 @@ class ZMQ_Requester:
 # image client
 # ========================================================
 class ImageClient:
-    def __init__(self, host="192.168.123.164", request_port=60000):
+    def __init__(self, host="127.0.0.1", request_port=60000): #host="192.168.123.164"
         """
         Args:
             server_address:   IP address of image host server
@@ -623,7 +623,7 @@ def main():
     # command line args
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--host', type=str, default='192.168.123.164', help='IP address of image server')
+    parser.add_argument('--host', type=str, default='192.168.123.164', help='IP address of image server') #default='192.168.123.164'
     args = parser.parse_args()
 
     # Example usage with three camera streams
