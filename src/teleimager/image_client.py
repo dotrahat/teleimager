@@ -912,14 +912,13 @@ class ImageClient:
             if self._cam_config is None:
                 raise RuntimeError("Failed to get camera configuration.")
             
-            if self._cam_config['head_camera']['enable_zmq']:
-                self._subscriber_manager.subscribe(self._host, self._cam_config['head_camera']['zmq_port'], request_bgr=self._request_bgr)
-
-            if self._cam_config['left_wrist_camera']['enable_zmq']:
-                self._subscriber_manager.subscribe(self._host, self._cam_config['left_wrist_camera']['zmq_port'], request_bgr=self._request_bgr)
-
-            if self._cam_config['right_wrist_camera']['enable_zmq']:
-                self._subscriber_manager.subscribe(self._host, self._cam_config['right_wrist_camera']['zmq_port'], request_bgr=self._request_bgr)
+            for camera_name in self.get_camera_names(transport="zmq"):
+                camera = self._cam_config[camera_name]
+                self._subscriber_manager.subscribe(
+                    self._host,
+                    camera['zmq_port'],
+                    request_bgr=self._request_bgr,
+                )
         except Exception:
             if self._requester is not None:
                 self._requester.close()
@@ -927,8 +926,8 @@ class ImageClient:
                 self._subscriber_manager.close()
             raise
 
-        if not self._cam_config['head_camera']['enable_zmq'] and not self._cam_config['head_camera']['enable_webrtc']:
-            logger_mp.warning("[Image Client] NOTICE! Head camera is not enabled on both ZMQ and WebRTC.")
+        if not self.get_camera_names():
+            logger_mp.warning("[Image Client] NOTICE! No camera is enabled on ZMQ or WebRTC.")
 
     # --------------------------------------------------------
     # public api
@@ -936,14 +935,47 @@ class ImageClient:
     def get_cam_config(self):
         return self._cam_config
 
+    def get_camera_names(self, transport=None):
+        """Return configured camera names, optionally filtered by transport.
+
+        A camera entry is identified structurally instead of by a fixed topic name, so
+        adding or removing cameras in the server YAML needs no client code change.
+        """
+        if transport not in (None, "zmq", "webrtc"):
+            raise ValueError(f"Unknown camera transport: {transport}")
+        names = []
+        for name, camera in self._cam_config.items():
+            if not isinstance(camera, dict) or "image_shape" not in camera:
+                continue
+            if transport is None:
+                enabled = camera.get("enable_zmq", False) or camera.get("enable_webrtc", False)
+            else:
+                enabled = camera.get(f"enable_{transport}", False)
+            if enabled:
+                names.append(name)
+        return names
+
+    def get_frame(self, camera_name):
+        """Return the latest ZMQ frame for any configured camera topic."""
+        if camera_name not in self._cam_config:
+            raise KeyError(f"Unknown camera: {camera_name}")
+        camera = self._cam_config[camera_name]
+        if not isinstance(camera, dict) or not camera.get("enable_zmq", False):
+            raise ValueError(f"Camera {camera_name!r} is not enabled for ZMQ.")
+        return self._subscriber_manager.subscribe(
+            self._host,
+            camera['zmq_port'],
+            request_bgr=self._request_bgr,
+        )
+
     def get_head_frame(self):
-        return self._subscriber_manager.subscribe(self._host, self._cam_config['head_camera']['zmq_port'], request_bgr=self._request_bgr)
+        return self.get_frame('head_camera')
     
     def get_left_wrist_frame(self):
-        return self._subscriber_manager.subscribe(self._host, self._cam_config['left_wrist_camera']['zmq_port'], request_bgr=self._request_bgr)
+        return self.get_frame('left_wrist_camera')
     
     def get_right_wrist_frame(self):
-        return self._subscriber_manager.subscribe(self._host, self._cam_config['right_wrist_camera']['zmq_port'], request_bgr=self._request_bgr)
+        return self.get_frame('right_wrist_camera')
         
     def close(self):
         if self._closed:
